@@ -74,6 +74,8 @@ if __name__=='__main__':
     os.system('python {} --table {} -o {} --score {}'
             .format(fullpath, npz ,options.outdir, options.score
             ))
+    
+    
 
     
     

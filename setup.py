@@ -8,4 +8,4 @@ setup(name='coinheritance',
       author_email='hsher@ucsd.edu',
       license='MIT',
       packages=['coinheritance'],
-      zip_safe=False, install_requires=['pandas', 'scipy', 'numpy'])
+      zip_safe=False, install_requires=['pandas', 'scipy', 'numpy', 'scikit-learn'])

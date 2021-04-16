@@ -6,12 +6,15 @@ from multiprocessing import Pool, TimeoutError
 import time
 import pandas as pd
 import os
+#import sys, trackback
 
 
-def get_mutual_info(index_1, index_2, score = 'mutual_info', **kwargs):
+def get_mutual_info(index_1, index_2, **kwargs):
     
     if 'score' in kwargs:
         score = kwargs['score']
+    else:
+        score = 'mutual_info'
     
 
     row_1 = binned[index_1, :].toarray().ravel()
@@ -20,7 +23,7 @@ def get_mutual_info(index_1, index_2, score = 'mutual_info', **kwargs):
     
     if np.sum(row_1) == 0 or np.sum(row_1) == 0:
         # no data
-        return 0
+        return [index_1, index_2, 0]
     
     if score == 'mutual_info':
         s = mutual_info_score(row_1, row_2)
@@ -79,6 +82,9 @@ if __name__=='__main__':
     
     # only run on genes with hits in the reference genome
     non_zero_genes = np.where(np.sum(binned, axis = 1)>0)[0] 
+    n_genes = len(non_zero_genes)
+    print('Total none zero genes:', n_genes)
+    print('Expected lines:', n_genes*(n_genes-1)/2)
     all_index_combine = combinations(list(non_zero_genes), 2)
     #tasks = list(all_index_combine)
     
@@ -109,18 +115,23 @@ if __name__=='__main__':
             with Pool(options.pool) as pool:
                 time_outs = []
                 keywords = {'score':options.score}
-                sol = [pool.apply_async(get_mutual_info, t, keywords) for t in task_chunk]
+                sol = [pool.apply_async(get_mutual_info, t, kwds=keywords) for t in task_chunk]
 
                 with open(outfile, 'w') as f:
         
                     for s in sol:
                         try:
                             r = s.get()
+                            
                             f.write(','.join([str(s) for s in r])+'\n')
-                        except TimeoutError:
-                            print('Timeout Error')
+                        except Exception as e: 
+                            #traceback.print_exc()
+                            #print(e)
+                            #print(keywords)
+                            # TODO solve this fucking exception: https://stackoverflow.com/questions/49947814/python-threading-error-must-be-an-iterable-not-int
                             time_outs.append(s)
             
 
                 pool.close()
+    print(os.system('cat {}/*.csv > {}'.format(temp_dir, os.path.join(options.outdir, 'network.csv'))))
     os.system('cat {}/*.csv > {}'.format(temp_dir, os.path.join(options.outdir, 'network.csv')))
