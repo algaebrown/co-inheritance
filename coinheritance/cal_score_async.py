@@ -1,9 +1,8 @@
 from scipy.sparse import load_npz
-from itertools import combinations
+from itertools import combinations, zip_longest
 from sklearn.metrics import mutual_info_score, normalized_mutual_info_score
 import numpy as np
-from multiprocessing import Pool, Manager
-import multiprocessing
+from multiprocessing import Pool, TimeoutError
 import time
 import pandas as pd
 import os
@@ -27,9 +26,15 @@ def get_mutual_info(index_1, index_2, score = 'mutual_info', **kwargs):
         s = mutual_info_score(row_1, row_2)
     elif score == 'normalized_mutual_info':
         s = normalized_mutual_info_score(row_1, row_2)
-    results.append((index_1, index_2, s))
+    
     
     return [index_1, index_2, s]
+
+def grouper(iterable, n, fillvalue=None):
+    "Collect data into fixed-length chunks or blocks"
+    # grouper('ABCDEFG', 3, 'x') --> ABC DEF Gxx"
+    args = [iter(iterable)] * n
+    return zip_longest(*args, fillvalue=fillvalue)
 
 def option_parser():
     from optparse import OptionParser
@@ -55,6 +60,8 @@ def option_parser():
                   help="output directory")
     parser.add_option("-n", "--subset",dest="n_gene", default = 0, type = "int",
                   help="select n genes to do computation; debugging use or test run")
+    parser.add_option("-c", "--chunk",dest="n_chunk", default = 1000000, type = "int",
+                  help="select chunk size to")
 
     (options, args) = parser.parse_args()   
 
@@ -62,33 +69,58 @@ def option_parser():
 
 if __name__=='__main__':
     options = option_parser()
-
+    print('loading matrix')
     binned = load_npz(options.pivot)
 
     if options.n_gene > 0:
         # debugging option
         binned = binned[:options.n_gene, :]
 
-    t1 = time.time()
+    
     # only run on genes with hits in the reference genome
     non_zero_genes = np.where(np.sum(binned, axis = 1)>0)[0] 
     all_index_combine = combinations(list(non_zero_genes), 2)
-    tasks = list(all_index_combine)
+    #tasks = list(all_index_combine)
     
-    print('No. tasks: {}'.format(len(tasks)))
-    # shared memory for saving results
-    manager = Manager()
-    results = manager.list()
-
-    pool = Pool(options.pool)
-    keywords = {'score':options.score}
-    sol = [pool.apply_async(get_mutual_info, t, keywords) for t in tasks]
+    #n_task = len(tasks)
+    #print('No. tasks: {}'.format(n_task))
     
-    t2 = time.time()
-    print('Done computing scores, extracting results to dataframe. Total time: {} secs'.format(t2-t1))
     
-    df = pd.DataFrame(list(results), columns = ['gene_one', 'gene_two', 'mutual_info'])
+    # make temp dir
+    temp_dir = os.path.join(options.outdir, 'temp')
+    try:
+        os.mkdir(temp_dir)
+    except:
+        print('exists {}'.format(temp_dir))
 
-    df.to_csv(os.path.join(options.outdir, options.score+'.csv'), index = False)
+    # solve by chunk
+    chunk_size = options.n_chunk
+    #print(list(grouper(all_index_combine, chunk_size)))
+    for task_id, task_chunk in enumerate(grouper(all_index_combine, chunk_size)):
+    #for task_id in range(0, n_task, chunk_size):
+        outfile=os.path.join(temp_dir, options.score+'_{}.csv'.format(task_id))
 
-    print('results saved to: {}'.format(os.path.join(options.outdir, options.score+'.csv')))
+        if os.path.isfile(outfile):
+            # already calculated
+            print('passing task {}, calucalted'.format(task_id))
+        else:
+
+            print('processing task {}'.format(task_id))
+            with Pool(options.pool) as pool:
+                time_outs = []
+                keywords = {'score':options.score}
+                sol = [pool.apply_async(get_mutual_info, t, keywords) for t in task_chunk]
+
+                with open(outfile, 'w') as f:
+        
+                    for s in sol:
+                        try:
+                            r = s.get()
+                            f.write(','.join([str(s) for s in r])+'\n')
+                        except TimeoutError:
+                            print('Timeout Error')
+                            time_outs.append(s)
+            
+
+                pool.close()
+    os.system('cat {}/*.csv > {}'.format(temp_dir, os.path.join(options.outdir, 'network.csv')))
