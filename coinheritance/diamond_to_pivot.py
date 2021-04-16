@@ -82,7 +82,7 @@ def discretize(ma, bins = 100):
     
 
 
-def main(fasta_file, diamond_folder, bins = 100, outdir = '/tmp'):
+def main(fasta_file, diamond_folder, bins = 100, outdir = '/tmp', gene_index_path = 'None'):
     '''
 
     :param bins:
@@ -92,8 +92,11 @@ def main(fasta_file, diamond_folder, bins = 100, outdir = '/tmp'):
     :return:
     '''
     # map genome/genes to id 
-    print('Getting index file to genome and genes')
-    gid = gene_id(fasta_file, outdir = outdir)
+    if gene_index_path == 'None':
+        print('Getting index file to genome and genes')
+        gid = gene_id(fasta_file, outdir = outdir)
+    else:
+        gid = pickle.load(open(gene_index_path, 'rb'))
     tid = target_genome_id(diamond_folder, outdir = outdir)
 
     # get normalized e-value
@@ -131,6 +134,8 @@ def option_parser():
                   help="# of bins for discretization")
     parser.add_option("-o", "--outdir",dest="outdir", default = '/tmp', type = "string",
                   help="output directory")
+    parser.add_option("-g", "--gid",dest="gid", default = 'None', type = "string",
+                  help="genome_index")
 
     (options, args) = parser.parse_args()   
 
@@ -140,7 +145,7 @@ if __name__ == '__main__':
     
     options = option_parser()
 
-    normalized_pivot_table, binned_pivot_table = main(options.repr, options.diamond, bins = options.bins, outdir=options.outdir)
+    normalized_pivot_table, binned_pivot_table = main(options.repr, options.diamond, bins = options.bins, outdir=options.outdir, gene_index_path=options.gid)
 
     # save to output directory
     print('results saved in: {}'.format(options.outdir))
